@@ -99,15 +99,12 @@ class PythonAstREPLTool(BaseTool):
         if sys.version_info < (3, 9):
             try:
                 import astunparse
-                cls.unparse = astunparse.unparse
             except ImportError:
                 raise ValueError(
                     "This tool relies on Python 3.9 or higher "
                     "If you want to use it, please `pip install astunparse`"
                     f"you have Python version: {sys.version}"
                 )
-        else:
-            cls.unparse = ast.unparse
         return values
 
     def _run(
@@ -116,6 +113,13 @@ class PythonAstREPLTool(BaseTool):
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
         """Use the tool."""
+
+        try:
+            self.unparse = ast.unparse
+        except AttributeError:
+            import astunparse
+            self.unparse = astunparse.unparse
+
         try:
             if self.sanitize_input:
                 query = sanitize_input(query)
