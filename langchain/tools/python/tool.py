@@ -6,7 +6,7 @@ import re
 import sys
 from contextlib import redirect_stdout
 from io import StringIO
-from typing import Any, Dict, Optional, Type
+from typing import Any, Dict, Optional, Type, Callable
 
 from langchain.callbacks.manager import (
     AsyncCallbackManagerForToolRun,
@@ -95,16 +95,21 @@ class PythonAstREPLTool(BaseTool):
     locals: Optional[Dict] = Field(default_factory=dict)
     sanitize_input: bool = True
     args_schema: Type[BaseModel] = PythonInputs
+    unparse: Optional[Callable] = None
 
     @root_validator(pre=True)
     def validate_python_version(cls, values: Dict) -> Dict:
         """Validate valid python version."""
         if sys.version_info < (3, 9):
-            raise ValueError(
-                "This tool relies on Python 3.9 or higher "
-                "(as it uses new functionality in the `ast` module, "
-                f"you have Python version: {sys.version}"
-            )
+            try:
+                import astunparse
+
+            except ImportError:
+                raise ValueError(
+                    "This tool relies on Python 3.9 or higher "
+                    "If you want to use it, please `pip install astunparse`"
+                    f"you have Python version: {sys.version}"
+                )
         return values
 
     def _run(
@@ -113,14 +118,22 @@ class PythonAstREPLTool(BaseTool):
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
         """Use the tool."""
+
+        try:
+            self.unparse = ast.unparse
+        except AttributeError:
+            import astunparse
+            self.unparse = astunparse.unparse
+
+
         try:
             if self.sanitize_input:
                 query = sanitize_input(query)
             tree = ast.parse(query)
             module = ast.Module(tree.body[:-1], type_ignores=[])
-            exec(ast.unparse(module), self.globals, self.locals)  # type: ignore
+            exec(self.unparse(module), self.globals, self.locals)  # type: ignore
             module_end = ast.Module(tree.body[-1:], type_ignores=[])
-            module_end_str = ast.unparse(module_end)  # type: ignore
+            module_end_str = self.unparse(module_end)  # type: ignore
             io_buffer = StringIO()
             try:
                 with redirect_stdout(io_buffer):
